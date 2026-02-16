@@ -138,7 +138,7 @@ with c3:
             with st.spinner("AI Drafting...", show_time=True):
                 client = genai.Client(api_key=USER_KEY)
                 prompt = f"As a Kerala Lawyer, draft {doc_type} for {jurisdiction} in {selected_district}. Facts: {facts}. STRICTLY USE 'PARTY A' and 'PARTY B'. NO NAMES."
-                res = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+                res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                 st.session_state.final_master = res.text
 with c4:
     # Feature 8: Mirror Style
@@ -149,7 +149,7 @@ with c4:
                 doc = Document(os.path.join(VAULT_PATH, selected_ref))
                 dna = "\n".join([p.text for p in doc.paragraphs[:15]])
                 prompt = f"MIMIC THIS STYLE:\n{dna}\n\nTASK: Draft {doc_type} for {facts}. USE 'PARTY A' and 'PARTY B'."
-                res = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+                res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                 st.session_state.final_master = res.text
 
 # Feature 6 Container
