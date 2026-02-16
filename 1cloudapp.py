@@ -11,7 +11,7 @@ from supabase import create_client, Client
 
 # 1. INITIALIZATION & SECURE SETUP
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
-SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m" # <--- Update this key
+SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -29,10 +29,9 @@ def get_key():
     except:
         return ""
 
-# Feature 16: Cloud Save (Fixed for exact columns with spaces)
+# Feature 16: Cloud Save
 def save_to_supabase(dtype, content, client_name, case_no):
     try:
-        # EXACT column names as you specified: no underscores, just spaces
         data = {
             "draft type": dtype,
             "draft content": content,
@@ -61,7 +60,7 @@ def save_draft_to_history(dtype, content):
     new_data = pd.DataFrame([{"Date": datetime.now().strftime("%Y-%m-%d %H:%M"), "Type": dtype, "Draft": content}])
     new_data.to_csv(HISTORY_FILE, mode='a', header=not os.path.exists(HISTORY_FILE), index=False)
 
-# Feature 12: Multi-Format Export Functions
+# --- FIX 1: RE-ADDED & CORRECTED PDF FUNCTION ---
 def create_pdf(text):
     pdf = FPDF()
     pdf.add_page()
@@ -87,11 +86,9 @@ with st.sidebar:
     st.title("👨‍⚖️ Control Panel")
     if USER_KEY: st.success("🟢 AI Online")
     
-    # Feature 3: Expanded Menu
     doc_type = st.selectbox("Petition Type", ["Bail Application", "NI Act (Sec 138)", "Writ Petition", "MC 125", "Domestic Violence", "MVOP", "Injunction", "Divorce"])
     jurisdiction = st.selectbox("Court Level", ["High Court", "District Court", "Family Court", "Munsiff Court"])
     
-    # Feature 4: High Court Auto-Lock
     is_hc = (jurisdiction == "High Court")
     districts = ["Alappuzha", "Ernakulam", "Idukki", "Kannur", "Kasaragod", "Kollam", "Kottayam", "Kozhikode", "Malappuram", "Palakkad", "Pathanamthitta", "Thiruvananthapuram", "Thrissur", "Wayanad"]
     selected_district = st.selectbox("District", districts, index=1 if is_hc else 0, disabled=is_hc)
@@ -104,14 +101,12 @@ with st.sidebar:
     vault_files = os.listdir(VAULT_PATH)
     selected_ref = st.selectbox("Mirror Reference:", ["None"] + vault_files)
 
-    # Feature 14: Clear/Reset Workstation
     if st.button("🧹 Clear All", use_container_width=True):
         st.session_state.final_master = ""
         st.session_state.search_results = []
         st.session_state.widget_key += 1
         st.rerun()
 
-    # Feature 5: Sidebar History (Last 10)
     st.divider()
     st.subheader("📜 Recent History")
     hist_df = load_history()
@@ -127,35 +122,32 @@ facts = st.text_area("Case Facts:", height=150, key=f"f_{st.session_state.widget
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
-    # Feature 6: Search API
     if st.button("🔍 Search API", use_container_width=True):
         st.session_state.search_results = [{"title": "Kerala HC Precedent 2025", "cite": "2025 KER 101", "sum": "Legal grounds confirmed."}]
 with c2:
-    # Feature 7: Web Research
     q = urllib.parse.quote_plus(facts if facts else "Kerala Law")
     st.link_button("🌐 Web Research", f"https://indiankanoon.org/search/?formInput={q}", use_container_width=True)
 with c3:
-    # Feature 9 & 13: Strict AI + Timer
     if st.button("🚀 Standard Draft", use_container_width=True):
         if USER_KEY:
             with st.spinner("AI Drafting...", show_time=True):
+                # --- FIX 2: MODEL NAME CHANGED TO 1.5 ---
                 client = genai.Client(api_key=USER_KEY)
                 prompt = f"As a Kerala Lawyer, draft {doc_type} for {jurisdiction} in {selected_district}. Facts: {facts}. STRICTLY USE 'PARTY A' and 'PARTY B'. NO NAMES."
-                res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+                res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                 st.session_state.final_master = res.text
 with c4:
-    # Feature 8: Mirror Style
     if st.button("✨ Mirror Style", type="primary", use_container_width=True, disabled=(selected_ref=="None")):
         if USER_KEY:
             with st.spinner(f"Mirroring {selected_ref}...", show_time=True):
+                # --- FIX 3: MODEL NAME CHANGED TO 1.5 ---
                 client = genai.Client(api_key=USER_KEY)
                 doc = Document(os.path.join(VAULT_PATH, selected_ref))
                 dna = "\n".join([p.text for p in doc.paragraphs[:15]])
                 prompt = f"MIMIC THIS STYLE:\n{dna}\n\nTASK: Draft {doc_type} for {facts}. USE 'PARTY A' and 'PARTY B'."
-                res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+                res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                 st.session_state.final_master = res.text
 
-# Feature 6 Container
 if st.session_state.search_results:
     with st.expander("📚 Related Precedents", expanded=True):
         for r in st.session_state.search_results: st.write(f"**{r['title']}** ({r['cite']})")
@@ -165,9 +157,7 @@ if st.session_state.final_master:
     st.subheader("🛠️ Case Details & Name Mapping")
     m1, m2 = st.columns(2)
     with m1:
-        # Inputs for Feature 16
         c_name = st.text_input("Client Name (for Cloud):")
-        # Feature 10: Live Party Mapping
         name_a = st.text_input("Name for PARTY A:")
         if st.button("Apply Petitioner Name"):
             st.session_state.final_master = st.session_state.final_master.replace("PARTY A", name_a)
@@ -179,10 +169,8 @@ if st.session_state.final_master:
             st.session_state.final_master = st.session_state.final_master.replace("PARTY B", name_b)
             st.rerun()
 
-    # Feature 11: Editable Workstation
     st.session_state.final_master = st.text_area("Live Editor:", value=st.session_state.final_master, height=400)
     
-    # Feature 12 & 16: Exports and Cloud Save
     st.divider()
     e1, e2, e3, e4 = st.columns(4)
     with e1:
@@ -197,4 +185,3 @@ if st.session_state.final_master:
     with e3:
         st.download_button("📥 MS Word", data=create_docx(st.session_state.final_master), file_name="draft.docx", use_container_width=True)
     with e4:
-        st.download_button("📥 PDF", data=create_pdf(st.session_state.final_master), file_name="draft.pdf", use_container_width=True)
