@@ -62,7 +62,16 @@ def save_draft_to_history(dtype, content):
     new_data.to_csv(HISTORY_FILE, mode='a', header=not os.path.exists(HISTORY_FILE), index=False)
 
 # Feature 12: Multi-Format Export Functions
-
+def create_pdf(text):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=11)
+    # Cleans text for PDF compatibility
+    clean_text = text.encode('latin-1', 'replace').decode('latin-1')
+    pdf.multi_cell(0, 8, clean_text)
+    # Output as string then convert to bytes for Streamlit
+    pdf_out = pdf.output(dest='S')
+    return bytes(pdf_out, 'latin-1')
 
 def create_docx(text):
     doc = Document()
