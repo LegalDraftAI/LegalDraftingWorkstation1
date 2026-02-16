@@ -18,7 +18,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 VAULT_PATH = "private_vault"
 HISTORY_FILE = "kerala_legal_history.csv"
 
-if not os.path.exists(VAULT_PATH): 
+if not os.path.exists(VAULT_PATH):
     os.makedirs(VAULT_PATH)
 
 st.set_page_config(page_title="Kerala Senior Advocate Workstation", layout="wide")
@@ -60,15 +60,12 @@ def save_draft_to_history(dtype, content):
     new_data = pd.DataFrame([{"Date": datetime.now().strftime("%Y-%m-%d %H:%M"), "Type": dtype, "Draft": content}])
     new_data.to_csv(HISTORY_FILE, mode='a', header=not os.path.exists(HISTORY_FILE), index=False)
 
-# --- FIX 1: RE-ADDED & CORRECTED PDF FUNCTION ---
 def create_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=11)
-    # Cleans text for PDF compatibility
     clean_text = text.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 8, clean_text)
-    # Output as string then convert to bytes for Streamlit
     pdf_out = pdf.output(dest='S')
     return bytes(pdf_out, 'latin-1')
 
@@ -131,7 +128,6 @@ with c3:
     if st.button("🚀 Standard Draft", use_container_width=True):
         if USER_KEY:
             with st.spinner("AI Drafting...", show_time=True):
-                # --- FIX 2: MODEL NAME CHANGED TO 1.5 ---
                 client = genai.Client(api_key=USER_KEY)
                 prompt = f"As a Kerala Lawyer, draft {doc_type} for {jurisdiction} in {selected_district}. Facts: {facts}. STRICTLY USE 'PARTY A' and 'PARTY B'. NO NAMES."
                 res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
@@ -140,7 +136,6 @@ with c4:
     if st.button("✨ Mirror Style", type="primary", use_container_width=True, disabled=(selected_ref=="None")):
         if USER_KEY:
             with st.spinner(f"Mirroring {selected_ref}...", show_time=True):
-                # --- FIX 3: MODEL NAME CHANGED TO 1.5 ---
                 client = genai.Client(api_key=USER_KEY)
                 doc = Document(os.path.join(VAULT_PATH, selected_ref))
                 dna = "\n".join([p.text for p in doc.paragraphs[:15]])
@@ -185,3 +180,4 @@ if st.session_state.final_master:
     with e3:
         st.download_button("📥 MS Word", data=create_docx(st.session_state.final_master), file_name="draft.docx", use_container_width=True)
     with e4:
+        st.download_button("📥 PDF", data=create_pdf(st.session_state.final_master), file_name="draft.pdf", use_container_width=True)
