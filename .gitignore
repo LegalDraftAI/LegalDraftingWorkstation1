@@ -2,7 +2,4 @@
 .venv/
 .streamlit/secrets.toml
 __pycache__/
-*.pyc
 .DS_Store
-private_vault/*
-kerala_legal_history.csv
