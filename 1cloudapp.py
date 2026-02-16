@@ -66,9 +66,11 @@ def create_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=11)
-    clean_text = text.encode('latin-1', 'ignore').decode('latin-1')
+    # This line "cleans" the text so it doesn't crash the PDF
+    clean_text = text.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 8, clean_text)
-    return pdf.output(dest='S').encode('latin-1')
+    # This line changed 'dest' to return the bytes directly
+    return pdf.output(dest='S')
 
 def create_docx(text):
     doc = Document()
