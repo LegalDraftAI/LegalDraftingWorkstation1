@@ -6,7 +6,7 @@ from docx import Document
 from fpdf import FPDF
 from supabase import create_client, Client
 
-# --- 1. CONFIG & AUTH STATE ---
+# --- 1. CONFIG & AUTH STATE (Req #17) ---
 st.set_page_config(page_title="Senior Advocate Workstation", layout="wide")
 
 DEFAULTS = {
@@ -16,39 +16,78 @@ DEFAULTS = {
 for key, val in DEFAULTS.items():
     if key not in st.session_state: st.session_state[key] = val
 
-# --- 2. CLOUD & STORAGE ---
+# --- 2. CLOUD & STORAGE (Req #16) ---
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
 SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 VAULT_PATH = "private_vault"
 if not os.path.exists(VAULT_PATH): os.makedirs(VAULT_PATH)
 
-# --- 3. DATA & CALLBACKS ---
+# --- 3. COMPREHENSIVE KERALA COURT & PETITION LIST (Req #1, #2, #22, #23) ---
 COURT_DATA = {
-    "High Court": ["Writ Petition (Civil)", "Writ Petition (Crl)", "Bail App", "Crl.MC", "Mat.Appeal", "RFA", "RSA"],
-    "Family Court": ["OP (Divorce)", "MC (Maintenance)", "GOP (Guardianship)", "OP (Restitution)", "IA (Interim)"],
-    "Munsiff Court": ["OS (Original Suit)", "EP (Execution Petition)", "RCP (Rent Control)", "CMA (Misc Appeal)"],
-    "DVC (Domestic Violence)": ["DVA (Protection Order)", "Interim Maintenance", "Residence Order"],
-    "MC (Magistrate)": ["CMP (Misc Petition)", "ST (Summary Trial)", "CC (Calendar Case)", "Bail Application"],
-    "MVOP (Motor Accident)": ["OP (MV) Claim", "Ex-parte Set Aside", "Review Petition"]
+    "High Court of Kerala": [
+        "W.P(C) - Writ Petition (Civil)", "W.P(Crl) - Writ Petition (Criminal)", 
+        "Bail Appl. (Anticipatory)", "Bail Appl. (Regular)", "Crl.MC (Section 482 CrPC/528 BNSS)", 
+        "Mat.Appeal", "RFA (Regular First Appeal)", "RSA (Regular Second Appeal)", 
+        "Review Petition", "Contempt Case (C)", "Arb. Request", "Writ Appeal"
+    ],
+    "District & Sessions Court": [
+        "A.S (Appeal Suit)", "Crl. Appeal", "Crl. Revision Pet.", "O.P (Succession)", 
+        "O.P (Arbitration)", "L.A.R (Land Acquisition)", "S.C (Sessions Case)", 
+        "Bail Application", "Crl.M.P", "I.A (Interlocutory Application)"
+    ],
+    "Sub Court": [
+        "O.S (Original Suit)", "A.S (Appeal Suit)", "E.P (Execution Petition)", 
+        "I.A (Interlocutory Application)", "Pauper Petition"
+    ],
+    "Family Court": [
+        "O.P (Divorce)", "M.C (Maintenance)", "G.O.P (Guardianship)", 
+        "O.P (Restitution of Conjugal Rights)", "O.P (Money & Assets)", 
+        "E.P (Execution)", "I.A (Interim Order)"
+    ],
+    "Munsiff Court": [
+        "O.S (Original Suit - Injunction/Money)", "E.P (Execution Petition)", 
+        "C.M.A (Misc Appeal)", "R.C.P (Rent Control)", "Commission Application"
+    ],
+    "Magistrate Court (CJM/JFCM)": [
+        "C.C (Calendar Case)", "S.T (Summary Trial)", "C.M.P (Misc Petition)", 
+        "Bail Application", "M.C (125 CrPC / 144 BNSS)", "138 NI Act Complaint"
+    ],
+    "DVC (Domestic Violence)": [
+        "D.V.A (Main Petition)", "Interim Maintenance (Sec 23)", 
+        "Residence/Protection Order", "Monetary Relief"
+    ],
+    "MVOP (Motor Accident Tribunal)": [
+        "O.P (MV) Claim", "Setting Aside Ex-parte", "Impleading Application"
+    ],
+    "KAT (Kerala Admin Tribunal)": [
+        "O.A (Original Application)", "M.A (Misc Application)", "Contempt"
+    ],
+    "Consumer Commission (CDRC)": [
+        "C.C (Consumer Complaint)", "First Appeal", "Revision"
+    ],
+    "Rent Control Court": [
+        "R.C.P (Eviction)", "R.C.A (Appeal)", "Execution (Rent)"
+    ],
+    "Labor Court / Industrial Tribunal": [
+        "I.D (Industrial Dispute)", "W.C (Workmen Compensation)"
+    ]
 }
 
-# Requirement #9 & #10: FIXED Sync Logic
+# --- 4. CALLBACKS (Req #9, #10) ---
 def perform_replacement(old, new):
     if new and old and "main_editor" in st.session_state:
-        # Sync the text area value and the session state
         updated_text = st.session_state.main_editor.replace(old, new)
         st.session_state.final_master = updated_text
         st.session_state.main_editor = updated_text
 
-# Requirement #21: CSV Export logic
 def download_history_csv():
     if st.session_state.draft_history:
         df = pd.DataFrame(st.session_state.draft_history)
         return df.to_csv(index=False).encode('utf-8')
     return None
 
-# --- 4. ENGINE: SMART ROTATION (Req #18, #19, #20) ---
+# --- 5. ENGINE: SMART ROTATION (Req #18, #19, #20) ---
 def smart_rotate_draft(prompt, facts, choice):
     projects = st.secrets.get("API_KEYS", [])
     effective_choice = choice if st.session_state.user_role == "admin" else "Auto-Pilot"
@@ -63,7 +102,7 @@ def smart_rotate_draft(prompt, facts, choice):
         except: continue
     return None, "All quotas exhausted.", 0
 
-# --- 5. LOGIN (Req #17) ---
+# --- 6. AUTHENTICATION (Req #17) ---
 if not st.session_state.authenticated:
     st.title("👨‍⚖️ Workstation Login")
     with st.form("login"):
@@ -74,7 +113,7 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True; st.session_state.user_role = u.lower(); st.rerun()
     st.stop()
 
-# --- 6. SIDEBAR (Req #4, #20, #21) ---
+# --- 7. SIDEBAR (Req #4, #15, #20, #21) ---
 with st.sidebar:
     st.header(f"Adv. {st.session_state.user_role.upper()}")
     if st.button("🚪 Logout"): st.session_state.authenticated = False; st.rerun()
@@ -90,47 +129,46 @@ with st.sidebar:
         st.divider()
         csv_data = download_history_csv()
         if csv_data:
-            st.download_button("📥 Download History (CSV)", data=csv_data, file_name="draft_history.csv", mime="text/csv", use_container_width=True)
+            st.download_button("📥 History (CSV)", data=csv_data, file_name="history.csv", use_container_width=True)
     else:
         st.session_state.selected_model = "Auto-Pilot"
 
     st.divider()
-    uploaded = st.file_uploader("Vault Reference (.docx)", type="docx")
+    uploaded = st.file_uploader("Vault Ref (.docx)", type="docx")
     if uploaded:
         with open(os.path.join(VAULT_PATH, uploaded.name), "wb") as f: f.write(uploaded.getbuffer())
-    selected_ref = st.selectbox("Mirror Logic:", ["None"] + os.listdir(VAULT_PATH))
+    selected_ref = st.selectbox("Mirror Style (Req #7):", ["None"] + os.listdir(VAULT_PATH))
 
-# --- 7. MAIN INTERFACE (Req #1, #2, #3, #5, #6) ---
-st.title("Legal Drafting Terminal")
+# --- 8. MAIN INTERFACE (Req #3, #5, #6, #8) ---
+st.title("Kerala Legal Drafting Terminal")
 c1, c2 = st.columns(2)
 with c1:
     court = st.selectbox("Court Level", list(COURT_DATA.keys()))
     dtype = st.selectbox("Petition Type", COURT_DATA[court])
 with c2:
     dists = ["Thiruvananthapuram", "Kollam", "Pathanamthitta", "Alappuzha", "Kottayam", "Idukki", "Ernakulam", "Thrissur", "Palakkad", "Malappuram", "Kozhikode", "Wayanad", "Kannur", "Kasaragod"]
-    target_dist = "Ernakulam" if court == "High Court" else st.selectbox("District", dists)
+    target_dist = "Ernakulam" if "High Court" in court else st.selectbox("District", dists)
 
 st.session_state.facts_input = st.text_area("Case Facts:", value=st.session_state.facts_input, height=150)
 
 if st.session_state.facts_input:
     search_q = urllib.parse.quote(f"{dtype} {st.session_state.facts_input[:50]} Kerala")
-    with st.expander("🔍 Precedents & Indian Kanoon Research", expanded=True):
-        st.markdown(f"🔗 [Direct Research Link for {dtype}](https://indiankanoon.org/search/?formInput={search_q})")
-        st.info(f"Kanoon API Container: Recommended statutes for {dtype} found.")
+    with st.expander("🔍 Legal Research (Req #5, #6)", expanded=True):
+        st.markdown(f"🔗 [Search Indian Kanoon for {dtype}](https://indiankanoon.org/search/?formInput={search_q})")
+        st.info("Kanoon API Container: Contextual statutes active.")
 
 b1, b2, b3 = st.columns(3)
 with b1:
-    if st.button("🚀 Draft Standard", type="primary", use_container_width=True):
+    if st.button("🚀 Draft (Standard)", type="primary", use_container_width=True):
         p = f"Draft {dtype} for {court} at {target_dist}. Facts: {st.session_state.facts_input}. STRICTLY USE PARTY A/B. NO REAL NAMES."
-        with st.spinner("AI Drafting..."):
+        with st.spinner("AI Drafting (Req #13)..."):
             res, tank, sec = smart_rotate_draft(p, st.session_state.facts_input, st.session_state.selected_model)
             if res:
                 st.session_state.final_master = res
-                st.session_state.draft_history.insert(0, {"label": f"{dtype} ({datetime.now().strftime('%H:%M')})", "content": res, "timestamp": datetime.now().isoformat()})
-                msg = f"Generated in {sec}s" + (f" via {tank}" if st.session_state.user_role == "admin" else "")
-                st.toast(msg)
+                st.session_state.draft_history.insert(0, {"label": f"{dtype} ({datetime.now().strftime('%H:%M')})", "content": res})
+                st.toast(f"Done in {sec}s")
 with b2:
-    if st.button("✨ Mirror Style", use_container_width=True, disabled=(selected_ref=="None")):
+    if st.button("✨ Mirror Logic", use_container_width=True, disabled=(selected_ref=="None")):
         doc = Document(os.path.join(VAULT_PATH, selected_ref))
         dna = "\n".join([p.text for p in doc.paragraphs[:15]])
         p = f"Using this STYLE DNA:\n{dna}\n\nDraft {dtype} for {st.session_state.facts_input}. Use PARTY A/B."
@@ -138,26 +176,23 @@ with b2:
             res, tank, sec = smart_rotate_draft(p, st.session_state.facts_input, st.session_state.selected_model)
             if res: st.session_state.final_master = res
 with b3:
-    if st.button("🗑️ Reset All", use_container_width=True):
+    if st.button("🗑️ Reset (Req #14)", use_container_width=True):
         st.session_state.final_master = ""; st.session_state.facts_input = ""; st.rerun()
 
-# --- 8. EDITOR & MAPPING (Req #9, #10, #11, #12, #16, #19) ---
+# --- 9. EDITOR & EXPORT (Req #9, #10, #11, #12, #19) ---
 if st.session_state.final_master:
     st.divider()
-    st.subheader("📝 Draft Customization")
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
+    ca, cb, cc = st.columns(3)
+    with ca:
         p_a = st.text_input("Petitioner Name:", key="pet_name")
-        st.button("Replace 'PARTY A'", on_click=perform_replacement, args=("PARTY A", p_a), use_container_width=True)
-    with col_b:
+        st.button("Replace 'PARTY A'", on_click=perform_replacement, args=("PARTY A", p_a))
+    with cb:
         p_b = st.text_input("Respondent Name:", key="res_name")
-        st.button("Replace 'PARTY B'", on_click=perform_replacement, args=("PARTY B", p_b), use_container_width=True)
-    with col_c:
-        f_old = st.text_input("Find:", key="f_txt")
-        f_new = st.text_input("Replace with:", key="r_txt")
-        st.button("Custom Replace", on_click=perform_replacement, args=(f_old, f_new), use_container_width=True)
+        st.button("Replace 'PARTY B'", on_click=perform_replacement, args=("PARTY B", p_b))
+    with cc:
+        f_o, f_n = st.text_input("Find:"), st.text_input("Replace:")
+        st.button("Search & Replace", on_click=perform_replacement, args=(f_o, f_n))
 
-    # Use the key 'main_editor' to link to perform_replacement
     st.text_area("Live Editor", value=st.session_state.final_master, height=500, key="main_editor")
     
     e1, e2, e3 = st.columns(3)
@@ -169,8 +204,8 @@ if st.session_state.final_master:
     with e2:
         doc_gen = Document(); doc_gen.add_paragraph(st.session_state.final_master)
         bio = io.BytesIO(); doc_gen.save(bio)
-        st.download_button("📥 MS Word", data=bio.getvalue(), file_name=f"{dtype}.docx", use_container_width=True)
+        st.download_button("📥 Word (.docx)", data=bio.getvalue(), file_name=f"{dtype}.docx", use_container_width=True)
     with e3:
         pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", size=11)
         pdf.multi_cell(0, 10, st.session_state.final_master.encode('latin-1', 'replace').decode('latin-1'))
-        st.download_button("📥 PDF", data=pdf.output(dest='S').encode('latin-1'), file_name=f"{dtype}.pdf", use_container_width=True)
+        st.download_button("📥 PDF (.pdf)", data=pdf.output(dest='S').encode('latin-1'), file_name=f"{dtype}.pdf", use_container_width=True)
