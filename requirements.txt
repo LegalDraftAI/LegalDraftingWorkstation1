@@ -1,6 +1,6 @@
 streamlit
 pandas
-google-genai
+google-generativeai
 python-docx
 fpdf
 supabase
