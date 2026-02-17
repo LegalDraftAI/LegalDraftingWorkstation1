@@ -9,12 +9,15 @@ import io
 import urllib.parse
 from supabase import create_client, Client
 
-# --- PASTE THE LOGIN SHIELD HERE ---
+# --- START OF COMBINED AUTHENTICATION & SIDEBAR LOGIC ---
+
+# Initialize session state for security
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_role = None
 
 def login_form():
+    """Displays the login screen."""
     st.markdown("### 👨‍⚖️ Kerala Senior Advocate Workstation")
     st.subheader("Authorized Access Only")
     
@@ -24,6 +27,7 @@ def login_form():
         submit = st.form_submit_button("Enter Workstation")
         
         if submit:
+            # Fetches the [passwords] section from your Streamlit Secrets
             creds = st.secrets.get("passwords", {})
             if user in creds and password == creds[user]:
                 st.session_state.authenticated = True
@@ -32,10 +36,22 @@ def login_form():
             else:
                 st.error("Invalid credentials. Access Denied.")
 
+# Step 1: Check Authentication - If fail, stop the app here
 if not st.session_state.authenticated:
     login_form()
     st.stop() 
-# --- END OF LOGIN SHIELD ---
+
+# Step 2: Define the Sidebar with a Logout Button
+# This will appear at the top of your sidebar once logged in
+with st.sidebar:
+    st.title(f"👨‍⚖️ {st.session_state.user_role.capitalize()} Panel")
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.user_role = None
+        st.rerun()
+    st.divider()
+
+# --- END OF COMBINED AUTHENTICATION & SIDEBAR LOGIC ---
 
 # 1. INITIALIZATION & SECURE SETUP
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
