@@ -1,234 +1,159 @@
 import streamlit as st
-import os
-import pandas as pd
+import os, io, urllib.parse, time
 from datetime import datetime
-import time
 from google import genai
 from docx import Document
 from fpdf import FPDF
-import io
-import urllib.parse
 from supabase import create_client, Client
 
-# --- 1. LOGIN SHIELD ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-    st.session_state.user_role = None
+# --- 1. CORE SYSTEM CONFIG ---
+st.set_page_config(page_title="Kerala Senior Advocate Workstation", layout="wide")
 
-def login_form():
-    st.markdown("### 👨‍⚖️ Kerala Senior Advocate Workstation")
-    st.subheader("Authorized Access Only")
-    with st.form("login_gate"):
-        user = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Enter Workstation")
-        if submit:
-            creds = st.secrets.get("passwords", {})
-            if user in creds and password == creds[user]:
-                st.session_state.authenticated = True
-                st.session_state.user_role = user
-                st.rerun()
-            else:
-                st.error("Invalid credentials. Access Denied.")
+# Persistent state for all 19 requirements
+DEFAULTS = {
+    "authenticated": False, "user_role": None, "final_master": "", 
+    "draft_history": [], "facts_input": "", "selected_model": "gemini-2.0-flash"
+}
+for key, val in DEFAULTS.items():
+    if key not in st.session_state: st.session_state[key] = val
 
-if not st.session_state.authenticated:
-    login_form()
-    st.stop()
-
-# --- 2. INITIALIZATION & SECURE SETUP ---
+# --- 2. CLOUD & LOCAL STORAGE ---
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
 SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 VAULT_PATH = "private_vault"
-HISTORY_FILE = "kerala_legal_history.csv"
-if not os.path.exists(VAULT_PATH):
-    os.makedirs(VAULT_PATH)
+if not os.path.exists(VAULT_PATH): os.makedirs(VAULT_PATH)
 
-st.set_page_config(page_title="Kerala Senior Advocate Workstation", layout="wide")
+# --- 3. THE SMART ROTATOR (Req #18) ---
+def smart_rotate_draft(prompt):
+    projects = st.secrets.get("API_KEYS", [])
+    if not projects: return None, "Secrets Error: API_KEYS list missing."
+    
+    for name, key in projects:
+        try:
+            client = genai.Client(api_key=key)
+            # Req #13: Timer is handled by the calling UI spinner
+            res = client.models.generate_content(
+                model=st.session_state.selected_model, 
+                contents=prompt
+            )
+            return res.text, name
+        except Exception as e:
+            if "429" in str(e): # Quota Hit
+                st.toast(f"⚠️ Project {name} full. Swapping...")
+                continue
+            return None, f"Error in {name}: {str(e)}"
+    return None, "All 5 Project Quotas Exhausted."
 
-# Hide menu for security
-st.markdown("""<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>""", unsafe_allow_html=True)
+# --- 4. LOGIN GATE (Req #17) ---
+if not st.session_state.authenticated:
+    st.title("👨‍⚖️ Senior Advocate Workstation")
+    with st.form("login_form"):
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
+        if st.form_submit_button("Access Workstation"):
+            creds = st.secrets.get("passwords", {})
+            if u in creds and p == creds[u]:
+                st.session_state.authenticated = True
+                st.session_state.user_role = u
+                st.rerun()
+            else: st.error("Access Denied")
+    st.stop()
 
-# Session State Management (Preserving your existing keys)
-if "final_master" not in st.session_state: st.session_state.final_master = ""
-if "search_results" not in st.session_state: st.session_state.search_results = []
-if "widget_key" not in st.session_state: st.session_state.widget_key = 0
-# NEW: Safety features state
-if "last_draft_time" not in st.session_state: st.session_state.last_draft_time = None
-if "selected_model" not in st.session_state: st.session_state.selected_model = "gemini-2.0-flash"
-
-def get_key():
-    return st.secrets.get("GOOGLE_API_KEY", "")
-
-def save_to_supabase(dtype, content, client_name, case_no):
-    try:
-        data = {"draft type": dtype, "draft content": content, "client name": client_name, "case number": case_no}
-        supabase.table("legal_drafts").insert(data).execute()
-        return True
-    except Exception as e:
-        st.error(f"Cloud Connection Issue: {e}")
-        return False
-
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        try: return pd.read_csv(HISTORY_FILE).tail(10).iloc[::-1]
-        except: return pd.DataFrame()
-    return pd.DataFrame()
-
-def save_draft_to_history(dtype, content):
-    new_data = pd.DataFrame([{"Date": datetime.now().strftime("%Y-%m-%d %H:%M"), "Type": dtype, "Draft": content}])
-    new_data.to_csv(HISTORY_FILE, mode='a', header=not os.path.exists(HISTORY_FILE), index=False)
-
-def create_pdf(text):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=11)
-    clean_text = text.encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 8, clean_text)
-    return bytes(pdf.output(dest='S'), 'latin-1')
-
-def create_docx(text):
-    doc = Document()
-    doc.add_paragraph(text)
-    bio = io.BytesIO()
-    doc.save(bio)
-    return bio.getvalue()
-
-# --- 3. SIDEBAR (Integrated Logout & Toggle) ---
+# --- 5. SIDEBAR: HISTORY & VAULT (Req #5, #8, #19) ---
 with st.sidebar:
-    st.title(f"👨‍⚖️ {st.session_state.user_role.capitalize()} Panel")
+    st.subheader(f"Advocate: {st.session_state.user_role.upper()}")
     if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.authenticated = False
-        st.session_state.user_role = None
-        st.rerun()
+        st.session_state.authenticated = False; st.rerun()
     
     st.divider()
-    st.subheader("⚙️ AI Engine Settings")
-    st.session_state.selected_model = st.radio("Select AI Version:", ["gemini-2.0-flash", "gemini-2.5-flash"])
+    st.subheader("📜 History (Last 10)")
+    for i, item in enumerate(st.session_state.draft_history):
+        if st.button(item["label"], key=f"h_{i}", use_container_width=True):
+            st.session_state.final_master = item["content"]
+            st.rerun()
+
+    st.divider()
+    st.session_state.selected_model = st.radio("Intelligence Level:", ["gemini-2.0-flash", "gemini-2.0-pro-exp-02-05"])
     
     st.divider()
-    doc_type = st.selectbox("Petition Type", ["Bail Application", "NI Act (Sec 138)", "Writ Petition", "MC 125", "Domestic Violence", "MVOP", "Injunction", "Divorce"])
-    jurisdiction = st.selectbox("Court Level", ["High Court", "District Court", "Family Court", "Munsiff Court"])
-    
-    is_hc = (jurisdiction == "High Court")
-    districts = ["Alappuzha", "Ernakulam", "Idukki", "Kannur", "Kasaragod", "Kollam", "Kottayam", "Kozhikode", "Malappuram", "Palakkad", "Pathanamthitta", "Thiruvananthapuram", "Thrissur", "Wayanad"]
-    selected_district = st.selectbox("District", districts, index=1 if is_hc else 0, disabled=is_hc)
-    
-    st.divider()
-    uploaded = st.file_uploader("Style Vault Ref", type="docx")
+    uploaded = st.file_uploader("Upload Style Reference (.docx)", type="docx")
     if uploaded:
         with open(os.path.join(VAULT_PATH, uploaded.name), "wb") as f: f.write(uploaded.getbuffer())
-    
-    vault_files = os.listdir(VAULT_PATH)
-    selected_ref = st.selectbox("Mirror Reference:", ["None"] + vault_files)
+    selected_ref = st.selectbox("Style Mirror:", ["None"] + os.listdir(VAULT_PATH))
 
-    if st.button("🧹 Clear All", use_container_width=True):
-        st.session_state.final_master = ""
-        st.session_state.search_results = []
-        st.session_state.widget_key += 1
-        st.rerun()
+# --- 6. MAIN TERMINAL (Req #3, #4, #7, #9, #13, #14) ---
+st.header("Drafting Terminal")
+col1, col2 = st.columns(2)
+with col1:
+    court = st.selectbox("Court Level", ["High Court", "District Court", "Family Court", "Munsiff Court", "DVC", "MC", "MVOP"])
+    dtype = st.selectbox("Document Type", ["Bail Application", "NI Act 138", "Writ Petition", "OS (Civil)", "Notice"])
+with col2:
+    dists = ["Thiruvananthapuram", "Kollam", "Pathanamthitta", "Alappuzha", "Kottayam", "Idukki", "Ernakulam", "Thrissur", "Palakkad", "Malappuram", "Kozhikode", "Wayanad", "Kannur", "Kasaragod"]
+    # Req #4: HC Auto-Lock
+    target_dist = "Ernakulam" if court == "High Court" else st.selectbox("District", dists)
 
-    st.divider()
-    st.subheader("📜 Recent History")
-    hist_df = load_history()
-    if not hist_df.empty:
-        for i, row in hist_df.iterrows():
-            if st.button(f"📄 {row['Type']} ({row['Date'][:10]})", key=f"h_{i}", use_container_width=True):
-                st.session_state.final_master = row['Draft']
-                st.rerun()
+facts = st.text_area("Case Facts:", value=st.session_state.facts_input, height=150)
 
-# --- 4. MAIN WORK AREA ---
-USER_KEY = get_key()
-st.title(f"Drafting: {doc_type}")
-facts = st.text_area("Case Facts:", height=150, key=f"f_{st.session_state.widget_key}")
+# Req #7: Web Research Link
+if facts:
+    q = urllib.parse.quote(f"{dtype} {facts[:40]} Kerala Court")
+    st.markdown(f"🔍 [Research Precedents on Indian Kanoon](https://indiankanoon.org/search/?formInput={q})")
 
-c1, c2, c3, c4 = st.columns(4)
+b1, b2, b3 = st.columns([1,1,1])
+with b1:
+    if st.button("🚀 Draft Standard", type="primary", use_container_width=True):
+        p = f"Draft {dtype} for {court} at {target_dist}. Facts: {facts}. USE 'PARTY A' and 'PARTY B'. No real names."
+        start_t = time.time()
+        with st.spinner("AI Drafting (Keys Rotating)..."):
+            res, tank = smart_rotate_draft(p)
+            if res:
+                st.session_state.final_master = res
+                st.session_state.draft_history.insert(0, {"label": f"{dtype} - {datetime.now().strftime('%H:%M')}", "content": res})
+                st.success(f"Generated via {tank} in {round(time.time()-start_t, 1)}s")
+with b2:
+    if st.button("✨ Mirror Style", use_container_width=True, disabled=(selected_ref=="None")):
+        doc = Document(os.path.join(VAULT_PATH, selected_ref))
+        dna = "\n".join([p.text for p in doc.paragraphs[:12]])
+        p = f"Using this Style DNA:\n{dna}\n\nDraft {dtype} for {facts}. Use PARTY A/B."
+        with st.spinner(f"Mirroring {selected_ref}..."):
+            res, tank = smart_rotate_draft(p)
+            if res: st.session_state.final_master = res
+with b3:
+    if st.button("🗑️ Clear All", use_container_width=True):
+        st.session_state.final_master = ""; st.session_state.facts_input = ""; st.rerun()
 
-with c1:
-    if st.button("🔍 Search API", use_container_width=True):
-        st.session_state.search_results = [{"title": "Kerala HC Precedent 2025", "cite": "2025 KER 101", "sum": "Legal grounds confirmed."}]
-with c2:
-    q = urllib.parse.quote_plus(facts if facts else "Kerala Law")
-    st.link_button("🌐 Web Research", f"https://indiankanoon.org/search/?formInput={q}", use_container_width=True)
-
-with c3:
-    if st.button("🚀 Standard Draft", use_container_width=True):
-        # 60s Cooldown Check
-        if st.session_state.last_draft_time:
-            elapsed = (datetime.now() - st.session_state.last_draft_time).total_seconds()
-            if elapsed < 60:
-                st.warning(f"⏳ Cooldown: Wait {int(60 - elapsed)}s to avoid Quota Error.")
-                st.stop()
-        
-        if USER_KEY:
-            with st.spinner(f"Drafting with {st.session_state.selected_model}...", show_time=True):
-                try:
-                    client = genai.Client(api_key=USER_KEY)
-                    prompt = f"As a Kerala Lawyer, draft {doc_type} for {jurisdiction} in {selected_district}. Facts: {facts}. STRICTLY USE 'PARTY A' and 'PARTY B'. NO NAMES."
-                    res = client.models.generate_content(model=st.session_state.selected_model, contents=prompt)
-                    st.session_state.final_master = res.text
-                    st.session_state.last_draft_time = datetime.now()
-                except Exception as e:
-                    st.error(f"API Error: {e}")
-
-with c4:
-    if st.button("✨ Mirror Style", type="primary", use_container_width=True, disabled=(selected_ref=="None")):
-        # 60s Cooldown Check
-        if st.session_state.last_draft_time:
-            elapsed = (datetime.now() - st.session_state.last_draft_time).total_seconds()
-            if elapsed < 60:
-                st.warning(f"⏳ Cooldown: Wait {int(60 - elapsed)}s.")
-                st.stop()
-
-        if USER_KEY:
-            with st.spinner(f"Mirroring {selected_ref}...", show_time=True):
-                try:
-                    client = genai.Client(api_key=USER_KEY)
-                    doc = Document(os.path.join(VAULT_PATH, selected_ref))
-                    dna = "\n".join([p.text for p in doc.paragraphs[:15]])
-                    prompt = f"MIMIC THIS STYLE:\n{dna}\n\nTASK: Draft {doc_type} for {facts}. USE 'PARTY A' and 'PARTY B'."
-                    res = client.models.generate_content(model=st.session_state.selected_model, contents=prompt)
-                    st.session_state.final_master = res.text
-                    st.session_state.last_draft_time = datetime.now()
-                except Exception as e:
-                    st.error(f"API Error: {e}")
-
-if st.session_state.search_results:
-    with st.expander("📚 Related Precedents", expanded=True):
-        for r in st.session_state.search_results: st.write(f"**{r['title']}** ({r['cite']})")
-
+# --- 7. THE EDITOR & EXPORT (Req #10, #11, #12, #16) ---
 if st.session_state.final_master:
     st.divider()
-    st.subheader("🛠️ Case Details & Name Mapping")
+    # Req #10: Live Party Mapping
     m1, m2 = st.columns(2)
     with m1:
-        c_name = st.text_input("Client Name (for Cloud):")
-        name_a = st.text_input("Name for PARTY A:")
-        if st.button("Apply Petitioner Name"):
-            st.session_state.final_master = st.session_state.final_master.replace("PARTY A", name_a)
-            st.rerun()
+        p_a = st.text_input("Petitioner (PARTY A):")
+        if st.button("Map Petitioner"):
+            st.session_state.final_master = st.session_state.final_master.replace("PARTY A", p_a); st.rerun()
     with m2:
-        c_num = st.text_input("Case Number (for Cloud):")
-        name_b = st.text_input("Name for PARTY B:")
-        if st.button("Apply Respondent Name"):
-            st.session_state.final_master = st.session_state.final_master.replace("PARTY B", name_b)
-            st.rerun()
+        p_b = st.text_input("Respondent (PARTY B):")
+        if st.button("Map Respondent"):
+            st.session_state.final_master = st.session_state.final_master.replace("PARTY B", p_b); st.rerun()
 
-    st.session_state.final_master = st.text_area("Live Editor:", value=st.session_state.final_master, height=400)
+    # Req #11: Editable Text Area
+    st.session_state.final_master = st.text_area("Edit Draft:", value=st.session_state.final_master, height=500)
     
-    st.divider()
-    e1, e2, e3, e4 = st.columns(4)
+    # Req #12 & #16: Export & Cloud
+    e1, e2, e3 = st.columns(3)
     with e1:
-        if st.button("💾 Log Local", use_container_width=True):
-            save_draft_to_history(doc_type, st.session_state.final_master)
-            st.toast("Saved Locally!")
+        if st.button("☁️ Save to Cloud", type="primary", use_container_width=True):
+            supabase.table("legal_drafts").insert({"draft type": dtype, "draft content": st.session_state.final_master}).execute()
+            st.success("Archived to Supabase!")
     with e2:
-        if st.button("☁️ Cloud Save", use_container_width=True, type="primary"):
-            if save_to_supabase(doc_type, st.session_state.final_master, c_name, c_num):
-                st.success("Saved to Cloud Vault!")
-                st.balloons()
+        # Word Export
+        doc_gen = Document(); doc_gen.add_paragraph(st.session_state.final_master)
+        bio = io.BytesIO(); doc_gen.save(bio)
+        st.download_button("📥 Word (.docx)", data=bio.getvalue(), file_name=f"{dtype}.docx", use_container_width=True)
     with e3:
-        st.download_button("📥 MS Word", data=create_docx(st.session_state.final_master), file_name="draft.docx", use_container_width=True)
-    with e4:
-        st.download_button("📥 PDF", data=create_pdf(st.session_state.final_master), file_name="draft.pdf", use_container_width=True)
+        # PDF Export
+        pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", size=11)
+        safe_text = st.session_state.final_master.encode('latin-1', 'replace').decode('latin-1')
+        pdf.multi_cell(0, 10, safe_text)
+        st.download_button("📥 PDF (.pdf)", data=pdf.output(dest='S').encode('latin-1'), file_name=f"{dtype}.pdf", use_container_width=True)
