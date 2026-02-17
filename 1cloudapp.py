@@ -9,6 +9,34 @@ import io
 import urllib.parse
 from supabase import create_client, Client
 
+# --- PASTE THE LOGIN SHIELD HERE ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_role = None
+
+def login_form():
+    st.markdown("### 👨‍⚖️ Kerala Senior Advocate Workstation")
+    st.subheader("Authorized Access Only")
+    
+    with st.form("login_gate"):
+        user = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Enter Workstation")
+        
+        if submit:
+            creds = st.secrets.get("passwords", {})
+            if user in creds and password == creds[user]:
+                st.session_state.authenticated = True
+                st.session_state.user_role = user
+                st.rerun()
+            else:
+                st.error("Invalid credentials. Access Denied.")
+
+if not st.session_state.authenticated:
+    login_form()
+    st.stop() 
+# --- END OF LOGIN SHIELD ---
+
 # 1. INITIALIZATION & SECURE SETUP
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
 SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m"
