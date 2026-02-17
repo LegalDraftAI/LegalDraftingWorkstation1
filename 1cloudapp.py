@@ -12,7 +12,7 @@ st.set_page_config(page_title="Kerala Senior Advocate Workstation", layout="wide
 # Persistent state for all 19 requirements
 DEFAULTS = {
     "authenticated": False, "user_role": None, "final_master": "", 
-    "draft_history": [], "facts_input": "", "selected_model": "gemini-2.0-flash"
+    "draft_history": [], "facts_input": "", "selected_model": "gemini-2.5-flash"
 }
 for key, val in DEFAULTS.items():
     if key not in st.session_state: st.session_state[key] = val
@@ -74,7 +74,7 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.session_state.selected_model = st.radio("Intelligence Level:", ["gemini-2.0-flash", "gemini-2.0-pro-exp-02-05"])
+    st.session_state.selected_model = st.radio("Intelligence Level:", ["gemini-2.5-flash", "gemini-2.5-pro-exp-02-05"])
     
     st.divider()
     uploaded = st.file_uploader("Upload Style Reference (.docx)", type="docx")
