@@ -6,38 +6,53 @@ from docx import Document
 from fpdf import FPDF
 from supabase import create_client, Client
 
-# --- 1. CONFIG & AUTH STATE ---
+# --- 0. UNIVERSAL DEV ICON HIDE (executed before any UI) ---
+st.markdown("""
+    <style>
+    /* Hide hamburger menu, settings, fork/share icons globally */
+    #MainMenu {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
+    .stAppDeployButton, .css-1n76uvr {display: none !important;}
+    </style>
+""", unsafe_allow_html=True)
+
+# --- 1. CONFIG & DEFAULT SESSION STATE ---
 st.set_page_config(page_title="Senior Advocate Workstation", layout="wide")
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_role = 'user'
+if 'final_master' not in st.session_state:
+    st.session_state.final_master = ""
+if 'draft_history' not in st.session_state:
+    st.session_state.draft_history = []
+if 'facts_input' not in st.session_state:
+    st.session_state.facts_input = ""
+if 'selected_model' not in st.session_state:
+    st.session_state.selected_model = "Auto-Pilot"
 
-# --- UI LOCKDOWN LOGIC ---
-user_role_check = st.session_state.get('user_role', 'user')
-if user_role_check != 'admin':
-    st.markdown("""
-        <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        .stAppDeployButton {display:none;}
-        </style>
-        """, unsafe_allow_html=True)
+# --- 2. LOGIN ---
+if not st.session_state.authenticated:
+    st.title("👨‍⚖️ Workstation Login")
+    with st.form("login"):
+        u = st.text_input("User")
+        p = st.text_input("Pass", type="password")
+        if st.form_submit_button("Access"):
+            creds = st.secrets.get("passwords", {})
+            if u in creds and p == creds[u]:
+                st.session_state.authenticated = True
+                st.session_state.user_role = u.lower()
+                st.rerun()
+    st.stop()
 
-DEFAULTS = {
-    "authenticated": False, "user_role": "user", "final_master": "",
-    "draft_history": [], "facts_input": "", "selected_model": "Auto-Pilot"
-}
-for key, val in DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
-
-# --- 2. CLOUD & STORAGE ---
+# --- 3. CLOUD & STORAGE ---
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
 SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 VAULT_PATH = "private_vault"
 if not os.path.exists(VAULT_PATH):
     os.makedirs(VAULT_PATH)
 
-# --- 3. DATA & CALLBACKS ---
+# --- 4. COURT DATA ---
 COURT_DATA = {
     "High Court": ["Writ Petition (Civil)", "Writ Petition (Crl)", "Bail App", "Crl.MC", "Mat.Appeal", "RFA", "RSA"],
     "Family Court": ["OP (Divorce)", "MC (Maintenance)", "GOP (Guardianship)", "OP (Restitution)", "IA (Interim)"],
@@ -47,7 +62,6 @@ COURT_DATA = {
     "MVOP (Motor Accident)": ["OP (MV) Claim", "Ex-parte Set Aside", "Review Petition"]
 }
 
-# Structured Civil vs Criminal case types with standard abbreviations
 DIST_SESSIONS_COURT = {
     "Civil": [
         "OS - Original Suit",
@@ -71,13 +85,13 @@ DIST_SESSIONS_COURT = {
 }
 COURT_DATA["Dist & Sessions Court"] = []
 
+# --- 5. FUNCTIONS ---
 def perform_replacement(old, new):
     if new and old and "main_editor" in st.session_state:
         updated_text = st.session_state.main_editor.replace(old, new)
         st.session_state.final_master = updated_text
         st.session_state.main_editor = updated_text
 
-# --- 4. ENGINE ---
 def smart_rotate_draft(prompt, facts, choice):
     projects = st.secrets.get("API_KEYS", [])
     effective_choice = choice if st.session_state.user_role == "admin" else "Auto-Pilot"
@@ -94,32 +108,15 @@ def smart_rotate_draft(prompt, facts, choice):
             continue
     return None, "Offline", 0
 
-# --- 5. LOGIN ---
-if not st.session_state.authenticated:
-    st.title("👨‍⚖️ Workstation Login")
-    with st.form("login"):
-        u = st.text_input("User")
-        p = st.text_input("Pass", type="password")
-        if st.form_submit_button("Access"):
-            creds = st.secrets.get("passwords", {})
-            if u in creds and p == creds[u]:
-                st.session_state.authenticated = True
-                st.session_state.user_role = u.lower()
-                st.rerun()
-    st.stop()
-
 # --- 6. SIDEBAR ---
 with st.sidebar:
     st.header(f"Adv. {st.session_state.user_role.upper()}")
     st.divider()
-
     st.subheader("📜 History (Last 10)")
     for i, item in enumerate(st.session_state.draft_history[:10]):
         if st.button(item["label"], key=f"h_{i}", use_container_width=True):
             st.session_state.final_master = item["content"]
             st.rerun()
-
-    # Lock non-admins to Auto-Pilot
     st.session_state.selected_model = "Auto-Pilot"
 
     st.divider()
@@ -127,13 +124,10 @@ with st.sidebar:
     if uploaded:
         with open(os.path.join(VAULT_PATH, uploaded.name), "wb") as f:
             f.write(uploaded.getbuffer())
-
     selected_ref = st.selectbox("Mirror Logic:", ["None"] + os.listdir(VAULT_PATH))
 
 # --- 7. MAIN INTERFACE ---
 st.title("Legal Drafting Terminal")
-
-# 🔴 SIGN OUT BUTTON
 _, top_right = st.columns([9, 1])
 with top_right:
     if st.button("🚪 Sign Out"):
@@ -141,12 +135,11 @@ with top_right:
         st.session_state.user_role = "user"
         st.rerun()
 
-# COURT LEVEL & CASE TYPE SELECTION
+# COURT LEVEL & CASE TYPE
 c1, c2 = st.columns(2)
 with c1:
     court_options = list(COURT_DATA.keys()) + ["Dist & Sessions Court"]
     court = st.selectbox("Court Level", court_options)
-
     if court == "Dist & Sessions Court":
         category = st.selectbox("Category", ["Civil", "Criminal"])
         case_types = DIST_SESSIONS_COURT.get(category, [])
@@ -201,19 +194,16 @@ with b3:
         st.session_state.facts_input = ""
         st.rerun()
 
-# --- 8. EDITOR ---
+# --- EDITOR ---
 if st.session_state.final_master:
     st.divider()
     col_a, col_b, col_c = st.columns(3)
-
     with col_a:
         p_a = st.text_input("Petitioner Name:", key="pet_name")
         st.button("Map 'PARTY A'", on_click=perform_replacement, args=("PARTY A", p_a), use_container_width=True)
-
     with col_b:
         p_b = st.text_input("Respondent Name:", key="res_name")
         st.button("Map 'PARTY B'", on_click=perform_replacement, args=("PARTY B", p_b), use_container_width=True)
-
     with col_c:
         f_old = st.text_input("Find:", key="f_txt")
         f_new = st.text_input("Replace:", key="r_txt")
@@ -222,19 +212,15 @@ if st.session_state.final_master:
     st.text_area("Live Editor", value=st.session_state.final_master, height=500, key="main_editor")
 
     e1, e2, e3 = st.columns(3)
-
     with e2:
         doc_gen = Document()
         doc_gen.add_paragraph(st.session_state.final_master)
         bio = io.BytesIO()
         doc_gen.save(bio)
         st.download_button("📥 MS Word", data=bio.getvalue(), file_name=f"{dtype}.docx", use_container_width=True)
-
     with e3:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=11)
         pdf.multi_cell(0, 10, st.session_state.final_master.encode('latin-1', 'replace').decode('latin-1'))
         st.download_button("📥 PDF", data=pdf.output(dest='S').encode('latin-1'), file_name=f"{dtype}.pdf", use_container_width=True)
-
-
