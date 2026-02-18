@@ -9,7 +9,7 @@ from supabase import create_client, Client
 # --- 1. CONFIG & AUTH STATE ---
 st.set_page_config(page_title="Senior Advocate Workstation", layout="wide")
 
-# --- UI LOCKDOWN LOGIC (FIXED: Sidebar toggle preserved) ---
+# --- UI LOCKDOWN LOGIC ---
 user_role_check = st.session_state.get('user_role', 'user')
 if user_role_check != 'admin':
     st.markdown("""
@@ -46,6 +46,30 @@ COURT_DATA = {
     "MC (Magistrate)": ["CMP (Misc Petition)", "ST (Summary Trial)", "CC (Calendar Case)", "Bail Application"],
     "MVOP (Motor Accident)": ["OP (MV) Claim", "Ex-parte Set Aside", "Review Petition"]
 }
+
+# Structured Civil vs Criminal case types with standard abbreviations
+DIST_SESSIONS_COURT = {
+    "Civil": [
+        "OS - Original Suit",
+        "OP - Original Petition (Divorce / Family)",
+        "EA - Execution Application / Petition",
+        "MACT - Motor Accident Claim",
+        "CMA - Civil Misc. Appeal",
+        "Property/Title Dispute",
+        "Contract Dispute",
+        "Commercial/Company Suit"
+    ],
+    "Criminal": [
+        "Sessions Case - Serious Offences",
+        "CRR - Criminal Revision",
+        "CRA - Criminal Appeal",
+        "CMP - Criminal Misc. Petition",
+        "Bail Application",
+        "Contempt (Criminal)",
+        "NDPS / Special Criminal Cases"
+    ]
+}
+COURT_DATA["Dist & Sessions Court"] = []
 
 def perform_replacement(old, new):
     if new and old and "main_editor" in st.session_state:
@@ -84,7 +108,7 @@ if not st.session_state.authenticated:
                 st.rerun()
     st.stop()
 
-# --- 6. SIDEBAR (Logout removed) ---
+# --- 6. SIDEBAR ---
 with st.sidebar:
     st.header(f"Adv. {st.session_state.user_role.upper()}")
     st.divider()
@@ -95,23 +119,8 @@ with st.sidebar:
             st.session_state.final_master = item["content"]
             st.rerun()
 
-    if st.session_state.user_role == "admin":
-        st.divider()
-        st.session_state.selected_model = st.radio(
-            "Model Selection:",
-            ["Auto-Pilot", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"]
-        )
-        st.divider()
-        df = pd.DataFrame(st.session_state.draft_history)
-        if not df.empty:
-            st.download_button(
-                "📥 Download History (CSV)",
-                data=df.to_csv(index=False),
-                file_name="history.csv",
-                use_container_width=True
-            )
-    else:
-        st.session_state.selected_model = "Auto-Pilot"
+    # Lock non-admins to Auto-Pilot
+    st.session_state.selected_model = "Auto-Pilot"
 
     st.divider()
     uploaded = st.file_uploader("Vault Reference (.docx)", type="docx")
@@ -124,7 +133,7 @@ with st.sidebar:
 # --- 7. MAIN INTERFACE ---
 st.title("Legal Drafting Terminal")
 
-# 🔴 SIGN OUT BUTTON (Top Right)
+# 🔴 SIGN OUT BUTTON
 _, top_right = st.columns([9, 1])
 with top_right:
     if st.button("🚪 Sign Out"):
@@ -132,10 +141,19 @@ with top_right:
         st.session_state.user_role = "user"
         st.rerun()
 
+# COURT LEVEL & CASE TYPE SELECTION
 c1, c2 = st.columns(2)
 with c1:
-    court = st.selectbox("Court Level", list(COURT_DATA.keys()))
-    dtype = st.selectbox("Petition Type", COURT_DATA[court])
+    court_options = list(COURT_DATA.keys()) + ["Dist & Sessions Court"]
+    court = st.selectbox("Court Level", court_options)
+
+    if court == "Dist & Sessions Court":
+        category = st.selectbox("Category", ["Civil", "Criminal"])
+        case_types = DIST_SESSIONS_COURT.get(category, [])
+        dtype = st.selectbox("Case Type", case_types)
+    else:
+        dtype = st.selectbox("Petition Type", COURT_DATA.get(court, []))
+
 with c2:
     dists = ["Thiruvananthapuram", "Kollam", "Pathanamthitta", "Alappuzha",
              "Kottayam", "Idukki", "Ernakulam", "Thrissur", "Palakkad",
@@ -149,43 +167,31 @@ st.session_state.facts_input = st.text_area(
 )
 
 if st.session_state.facts_input:
-    search_q = urllib.parse.quote(
-        f"{dtype} {st.session_state.facts_input[:50]} Kerala"
-    )
+    search_q = urllib.parse.quote(f"{dtype} {st.session_state.facts_input[:50]} Kerala")
     with st.expander("🔍 Precedents & Indian Research", expanded=True):
-        st.markdown(
-            f"🔗 [Search Indian Kanoon]"
-            f"(https://indiankanoon.org/search/?formInput={search_q})"
-        )
+        st.markdown(f"🔗 [Search Indian Kanoon](https://indiankanoon.org/search/?formInput={search_q})")
 
 b1, b2, b3 = st.columns(3)
-
 with b1:
     if st.button("🚀 Draft Standard", type="primary", use_container_width=True):
         p = f"Draft {dtype} for {court} at {target_dist}. Facts: {st.session_state.facts_input}. STRICTLY USE PARTY A/B. NO REAL NAMES."
         with st.spinner("AI Drafting..."):
-            res, tank, sec = smart_rotate_draft(
-                p, st.session_state.facts_input, st.session_state.selected_model
-            )
+            res, tank, sec = smart_rotate_draft(p, st.session_state.facts_input, st.session_state.selected_model)
             if res:
                 st.session_state.final_master = res
                 st.session_state.draft_history.insert(
                     0,
-                    {"label": f"{dtype} ({datetime.now().strftime('%H:%M')})",
-                     "content": res}
+                    {"label": f"{dtype} ({datetime.now().strftime('%H:%M')})", "content": res}
                 )
                 st.toast(f"Done in {sec}s")
 
 with b2:
-    if st.button("✨ Mirror Style", use_container_width=True,
-                 disabled=(selected_ref == "None")):
+    if st.button("✨ Mirror Style", use_container_width=True, disabled=(selected_ref == "None")):
         doc = Document(os.path.join(VAULT_PATH, selected_ref))
         dna = "\n".join([p.text for p in doc.paragraphs[:15]])
         p = f"Style DNA:\n{dna}\n\nDraft {dtype} for {st.session_state.facts_input}. Use PARTY A/B."
         with st.spinner("Mirroring..."):
-            res, tank, sec = smart_rotate_draft(
-                p, st.session_state.facts_input, st.session_state.selected_model
-            )
+            res, tank, sec = smart_rotate_draft(p, st.session_state.facts_input, st.session_state.selected_model)
             if res:
                 st.session_state.final_master = res
 
@@ -198,72 +204,37 @@ with b3:
 # --- 8. EDITOR ---
 if st.session_state.final_master:
     st.divider()
-
     col_a, col_b, col_c = st.columns(3)
 
     with col_a:
         p_a = st.text_input("Petitioner Name:", key="pet_name")
-        st.button("Map 'PARTY A'",
-                  on_click=perform_replacement,
-                  args=("PARTY A", p_a),
-                  use_container_width=True)
+        st.button("Map 'PARTY A'", on_click=perform_replacement, args=("PARTY A", p_a), use_container_width=True)
 
     with col_b:
         p_b = st.text_input("Respondent Name:", key="res_name")
-        st.button("Map 'PARTY B'",
-                  on_click=perform_replacement,
-                  args=("PARTY B", p_b),
-                  use_container_width=True)
+        st.button("Map 'PARTY B'", on_click=perform_replacement, args=("PARTY B", p_b), use_container_width=True)
 
     with col_c:
         f_old = st.text_input("Find:", key="f_txt")
         f_new = st.text_input("Replace:", key="r_txt")
-        st.button("Replace All",
-                  on_click=perform_replacement,
-                  args=(f_old, f_new),
-                  use_container_width=True)
+        st.button("Replace All", on_click=perform_replacement, args=(f_old, f_new), use_container_width=True)
 
-    st.text_area("Live Editor",
-                 value=st.session_state.final_master,
-                 height=500,
-                 key="main_editor")
+    st.text_area("Live Editor", value=st.session_state.final_master, height=500, key="main_editor")
 
     e1, e2, e3 = st.columns(3)
-
-    with e1:
-        is_admin = st.session_state.user_role == "admin"
-        if st.button("☁️ Cloud Save",
-                     type="primary",
-                     use_container_width=True,
-                     disabled=not is_admin):
-            supabase.table("legal_drafts").insert({
-                "type": dtype,
-                "content": st.session_state.final_master
-            }).execute()
-            st.success("Cloud Secure")
 
     with e2:
         doc_gen = Document()
         doc_gen.add_paragraph(st.session_state.final_master)
         bio = io.BytesIO()
         doc_gen.save(bio)
-        st.download_button("📥 MS Word",
-                           data=bio.getvalue(),
-                           file_name=f"{dtype}.docx",
-                           use_container_width=True)
+        st.download_button("📥 MS Word", data=bio.getvalue(), file_name=f"{dtype}.docx", use_container_width=True)
 
     with e3:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=11)
-        pdf.multi_cell(
-            0, 10,
-            st.session_state.final_master
-            .encode('latin-1', 'replace')
-            .decode('latin-1')
-        )
-        st.download_button("📥 PDF",
-                           data=pdf.output(dest='S').encode('latin-1'),
-                           file_name=f"{dtype}.pdf",
-                           use_container_width=True)
+        pdf.multi_cell(0, 10, st.session_state.final_master.encode('latin-1', 'replace').decode('latin-1'))
+        st.download_button("📥 PDF", data=pdf.output(dest='S').encode('latin-1'), file_name=f"{dtype}.pdf", use_container_width=True)
+
 
