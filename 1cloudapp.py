@@ -6,18 +6,44 @@ from docx import Document
 from fpdf import FPDF
 from supabase import create_client, Client
 
-# --- 0. UNIVERSAL DEV ICON HIDE (executed before any UI) ---
+# --- 0. UNIVERSAL DEV UI LOCKDOWN (MUST BE FIRST STREAMLIT COMMAND) ---
+st.set_page_config(
+    page_title="Senior Advocate Workstation",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
 st.markdown("""
     <style>
-    /* Hide hamburger menu, settings, fork/share icons globally */
-    #MainMenu {visibility: hidden !important;}
-    footer {visibility: hidden !important;}
-    .stAppDeployButton, .css-1n76uvr {display: none !important;}
+        /* Hide hamburger menu */
+        #MainMenu {display: none !important;}
+
+        /* Hide footer */
+        footer {display: none !important;}
+
+        /* Hide entire header (top-right icons area) */
+        header {visibility: hidden !important;}
+
+        /* Hide Streamlit toolbar (fullscreen, settings, etc.) */
+        div[data-testid="stToolbar"] {
+            visibility: hidden !important;
+            height: 0px !important;
+            position: fixed !important;
+        }
+
+        /* Hide Deploy button */
+        .stAppDeployButton {
+            display: none !important;
+        }
+
+        /* Remove extra top padding */
+        .block-container {
+            padding-top: 1rem !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 1. CONFIG & DEFAULT SESSION STATE ---
-st.set_page_config(page_title="Senior Advocate Workstation", layout="wide")
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_role = 'user'
@@ -48,6 +74,7 @@ if not st.session_state.authenticated:
 SUPABASE_URL = "https://wuhsjcwtoradbzeqsoih.supabase.co"
 SUPABASE_KEY = "sb_publishable_02nqexIYCCBaWryubZEkqA_Tw2PqX6m"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 VAULT_PATH = "private_vault"
 if not os.path.exists(VAULT_PATH):
     os.makedirs(VAULT_PATH)
@@ -83,7 +110,6 @@ DIST_SESSIONS_COURT = {
         "NDPS / Special Criminal Cases"
     ]
 }
-COURT_DATA["Dist & Sessions Court"] = []
 
 # --- 5. FUNCTIONS ---
 def perform_replacement(old, new):
@@ -112,22 +138,23 @@ def smart_rotate_draft(prompt, facts, choice):
 with st.sidebar:
     st.header(f"Adv. {st.session_state.user_role.upper()}")
     st.divider()
+
     st.subheader("📜 History (Last 10)")
     for i, item in enumerate(st.session_state.draft_history[:10]):
         if st.button(item["label"], key=f"h_{i}", use_container_width=True):
             st.session_state.final_master = item["content"]
             st.rerun()
-    st.session_state.selected_model = "Auto-Pilot"
 
-    st.divider()
     uploaded = st.file_uploader("Vault Reference (.docx)", type="docx")
     if uploaded:
         with open(os.path.join(VAULT_PATH, uploaded.name), "wb") as f:
             f.write(uploaded.getbuffer())
+
     selected_ref = st.selectbox("Mirror Logic:", ["None"] + os.listdir(VAULT_PATH))
 
 # --- 7. MAIN INTERFACE ---
 st.title("Legal Drafting Terminal")
+
 _, top_right = st.columns([9, 1])
 with top_right:
     if st.button("🚪 Sign Out"):
@@ -135,11 +162,10 @@ with top_right:
         st.session_state.user_role = "user"
         st.rerun()
 
-# COURT LEVEL & CASE TYPE
 c1, c2 = st.columns(2)
+
 with c1:
-    court_options = list(COURT_DATA.keys()) + ["Dist & Sessions Court"]
-    court = st.selectbox("Court Level", court_options)
+    court = st.selectbox("Court Level", list(COURT_DATA.keys()) + ["Dist & Sessions Court"])
     if court == "Dist & Sessions Court":
         category = st.selectbox("Category", ["Civil", "Criminal"])
         case_types = DIST_SESSIONS_COURT.get(category, [])
@@ -165,6 +191,7 @@ if st.session_state.facts_input:
         st.markdown(f"🔗 [Search Indian Kanoon](https://indiankanoon.org/search/?formInput={search_q})")
 
 b1, b2, b3 = st.columns(3)
+
 with b1:
     if st.button("🚀 Draft Standard", type="primary", use_container_width=True):
         p = f"Draft {dtype} for {court} at {target_dist}. Facts: {st.session_state.facts_input}. STRICTLY USE PARTY A/B. NO REAL NAMES."
@@ -197,13 +224,17 @@ with b3:
 # --- EDITOR ---
 if st.session_state.final_master:
     st.divider()
+
     col_a, col_b, col_c = st.columns(3)
+
     with col_a:
         p_a = st.text_input("Petitioner Name:", key="pet_name")
         st.button("Map 'PARTY A'", on_click=perform_replacement, args=("PARTY A", p_a), use_container_width=True)
+
     with col_b:
         p_b = st.text_input("Respondent Name:", key="res_name")
         st.button("Map 'PARTY B'", on_click=perform_replacement, args=("PARTY B", p_b), use_container_width=True)
+
     with col_c:
         f_old = st.text_input("Find:", key="f_txt")
         f_new = st.text_input("Replace:", key="r_txt")
@@ -212,15 +243,18 @@ if st.session_state.final_master:
     st.text_area("Live Editor", value=st.session_state.final_master, height=500, key="main_editor")
 
     e1, e2, e3 = st.columns(3)
+
     with e2:
         doc_gen = Document()
         doc_gen.add_paragraph(st.session_state.final_master)
         bio = io.BytesIO()
         doc_gen.save(bio)
         st.download_button("📥 MS Word", data=bio.getvalue(), file_name=f"{dtype}.docx", use_container_width=True)
+
     with e3:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=11)
         pdf.multi_cell(0, 10, st.session_state.final_master.encode('latin-1', 'replace').decode('latin-1'))
         st.download_button("📥 PDF", data=pdf.output(dest='S').encode('latin-1'), file_name=f"{dtype}.pdf", use_container_width=True)
+
